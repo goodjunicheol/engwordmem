@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, interactive-widget=overlays-content">
 <title>영단어 암기장</title>
 <style>
   :root {
@@ -844,6 +844,8 @@
   nav.tabbar button:active { transform: scale(0.94); }
   nav.tabbar button .tab-icon { font-size: 19px; }
   nav.tabbar button.active { color: var(--primary-dark); background: var(--primary-light); }
+  /* 키보드가 열려 있을 때는 탭바가 키보드 위로 따라 올라오지 않게 숨김 (키보드 뒤 제자리에 있는 것처럼) */
+  body.keyboard-open nav.tabbar { visibility: hidden; opacity: 0; pointer-events: none; transition: none; }
 
   /* 설정 */
   header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -2838,6 +2840,23 @@
     if (!raw) return;
     speakWord(decodeURIComponent(raw), parseFloat(btn.dataset.rate) || 0.95, btn);
   }, true);
+
+  // ---------- 키보드 열림 감지 (탭바 고정) ----------
+  (function () {
+    const isTyping = (el) => el && (el.tagName === 'TEXTAREA' ||
+      (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|range|color|file)$/i.test(el.type)));
+    let blurTimer = null;
+    function update() {
+      const focused = isTyping(document.activeElement);
+      const vv = window.visualViewport;
+      const shrunk = vv ? (window.innerHeight - vv.height) > 120 : false;
+      document.body.classList.toggle('keyboard-open', focused || shrunk);
+    }
+    document.addEventListener('focusin', (e) => { if (isTyping(e.target)) { clearTimeout(blurTimer); update(); } });
+    // 입력칸 사이를 옮겨 다닐 때 깜빡이지 않도록 살짝 늦게 해제
+    document.addEventListener('focusout', () => { clearTimeout(blurTimer); blurTimer = setTimeout(update, 150); });
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', update);
+  })();
 
   // 초기 렌더
   renderList();
