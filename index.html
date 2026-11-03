@@ -912,7 +912,7 @@
           <span class="t-label">🔊 Gemini 음성으로 발음 듣기</span>
           <label class="switch"><input type="checkbox" id="setUseGemini"><span class="slider"></span></label>
         </div>
-        <div class="field-hint">끄면 브라우저 기본 음성을 써요. Gemini Live 모델: gemini-2.5-flash-native-audio-preview-09-2025</div>
+        <div class="field-hint">끄면 브라우저 기본 음성을 써요.</div>
       </div>
 
       <div class="gemini-fields" id="geminiFields">
@@ -923,6 +923,13 @@
             <button class="key-eye" id="keyEyeBtn" type="button" title="보기">👁️</button>
           </div>
           <div class="field-hint">키는 이 브라우저(로컬스토리지)에만 저장돼요. Google AI Studio에서 발급받을 수 있어요.</div>
+        </div>
+        <div class="form-group">
+          <label for="setModel">모델</label>
+          <select class="settings-select" id="setModel">
+            <option value="gemini-3.1-flash-live-preview">Gemini 3.1 Flash Live (빠름, 추천)</option>
+            <option value="gemini-2.5-flash-native-audio-preview-09-2025">Gemini 2.5 Flash Native Audio</option>
+          </select>
         </div>
         <div class="form-group">
           <label for="setVoice">목소리</label>
@@ -943,7 +950,15 @@
             <option value="British">영국식</option>
           </select>
         </div>
+        <div class="form-group">
+          <div class="toggle-row">
+            <span class="t-label">⚡ 카드·문제 단어 미리 받아 두기</span>
+            <label class="switch"><input type="checkbox" id="setPrefetch"><span class="slider"></span></label>
+          </div>
+          <div class="field-hint">복습 카드나 시험 문제가 나오면 발음을 미리 받아 둬서 누르자마자 들려요. 한 번 받은 발음은 기기에 저장돼서 다시 요청하지 않아요.</div>
+        </div>
         <button class="btn btn-secondary" id="testVoiceBtn" type="button">🔊 테스트 (pronunciation)</button>
+        <button class="btn btn-secondary" id="clearAudioCacheBtn" type="button" style="margin-top:8px;">🗑️ 저장된 발음 지우기</button>
       </div>
 
       <div class="settings-actions">
@@ -1904,6 +1919,7 @@
     cardSpeakRow.style.display = 'flex';
     cardSpeakBtn.dataset.text = encodeURIComponent(word.spell);
     cardSpeakSlowBtn.dataset.text = encodeURIComponent(word.spell);
+    prefetchWord(word.spell);
     cardSub.textContent = splitMeanings(word.meaning).join(' · ');
     reviewProgress.textContent = (reviewIndex + 1) + ' / ' + reviewOrder.length;
   }
@@ -2159,6 +2175,7 @@
     quizSpeakRow.style.display = isMeaningDirection ? 'flex' : 'none';
     document.getElementById('quizSpeakBtn').dataset.text = encodeURIComponent(word.spell);
     document.getElementById('quizSpeakSlowBtn').dataset.text = encodeURIComponent(word.spell);
+    if (isMeaningDirection) prefetchWord(word.spell);
 
     if (testFormat === 'choice') {
       quizOptions.style.display = 'flex';
@@ -2364,19 +2381,24 @@
 
   // ---------- 설정 (로컬스토리지) ----------
   const SETTINGS_KEY = 'vocab_settings_v1';
-  const GEMINI_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
-  const defaultSettings = { useGemini: false, apiKey: '', voice: 'Kore', accent: 'American' };
+  const GEMINI_MODELS = ['gemini-3.1-flash-live-preview', 'gemini-2.5-flash-native-audio-preview-09-2025'];
+  const defaultSettings = { useGemini: false, apiKey: '', model: GEMINI_MODELS[0], voice: 'Kore', accent: 'American', prefetch: true };
   function loadSettings() {
-    try { return Object.assign({}, defaultSettings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
-    catch (e) { return Object.assign({}, defaultSettings); }
+    let s;
+    try { s = Object.assign({}, defaultSettings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
+    catch (e) { s = Object.assign({}, defaultSettings); }
+    if (GEMINI_MODELS.indexOf(s.model) === -1) s.model = GEMINI_MODELS[0];
+    return s;
   }
   let settings = loadSettings();
 
   const settingsOverlay = document.getElementById('settingsOverlay');
   const setUseGemini = document.getElementById('setUseGemini');
   const setApiKey = document.getElementById('setApiKey');
+  const setModel = document.getElementById('setModel');
   const setVoice = document.getElementById('setVoice');
   const setAccent = document.getElementById('setAccent');
+  const setPrefetch = document.getElementById('setPrefetch');
   const geminiFields = document.getElementById('geminiFields');
   const settingsMsg = document.getElementById('settingsMsg');
 
@@ -2391,15 +2413,20 @@
     setUseGemini.checked = settings.useGemini;
     setApiKey.value = settings.apiKey;
     setApiKey.type = 'password';
+    setModel.value = settings.model;
     setVoice.value = settings.voice;
     setAccent.value = settings.accent;
+    setPrefetch.checked = settings.prefetch;
     syncGeminiFields();
     showSettingsMsg('');
     settingsOverlay.classList.add('open');
   }
   function closeSettings() { settingsOverlay.classList.remove('open'); }
   function readSettingsForm() {
-    return { useGemini: setUseGemini.checked, apiKey: setApiKey.value.trim(), voice: setVoice.value, accent: setAccent.value };
+    return {
+      useGemini: setUseGemini.checked, apiKey: setApiKey.value.trim(), model: setModel.value,
+      voice: setVoice.value, accent: setAccent.value, prefetch: setPrefetch.checked
+    };
   }
 
   document.getElementById('settingsOpenBtn').addEventListener('click', openSettings);
@@ -2415,12 +2442,16 @@
       showSettingsMsg('Gemini를 쓰려면 API 키를 입력해 주세요.', 'error');
       return;
     }
-    const changedVoice = next.voice !== settings.voice || next.accent !== settings.accent || next.apiKey !== settings.apiKey;
     settings = next;
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
-    if (changedVoice) geminiAudioCache.clear();
+    if (settings.useGemini) warmGemini(); else closeLiveSession();
     showSettingsMsg('저장했어요.', 'success');
     setTimeout(closeSettings, 500);
+  });
+  document.getElementById('clearAudioCacheBtn').addEventListener('click', async () => {
+    memAudioCache.clear();
+    await idbClear();
+    showSettingsMsg('저장된 발음을 지웠어요.', 'success');
   });
   document.getElementById('testVoiceBtn').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
@@ -2428,10 +2459,17 @@
     if (!s.apiKey) { showSettingsMsg('API 키를 입력해 주세요.', 'error'); return; }
     showSettingsMsg('Gemini에 연결하는 중…');
     btn.disabled = true;
+    stopAllAudio();
+    const t0 = performance.now();
+    let firstAt = 0;
     try {
-      const pcm = await fetchGeminiAudio('pronunciation', false, s);
-      await playPcm(pcm);
-      showSettingsMsg('정상 동작해요. 저장을 눌러 주세요.', 'success');
+      const session = getLiveSession(s);
+      await session.request(buildPrompt('pronunciation', false), (bytes) => {
+        if (!firstAt) firstAt = performance.now();
+        player.push(bytes);
+      });
+      await player.waitEnd();
+      showSettingsMsg('정상 동작해요 (첫 소리까지 ' + ((firstAt - t0) / 1000).toFixed(1) + '초). 저장을 눌러 주세요.', 'success');
     } catch (err) {
       showSettingsMsg('실패: ' + err.message, 'error');
     } finally {
@@ -2439,121 +2477,285 @@
     }
   });
 
-  // ---------- Gemini Live (네이티브 오디오) ----------
-  const geminiAudioCache = new Map(); // key -> Int16Array(PCM 24kHz)
+  // ---------- 오디오 재생 (도착하는 대로 바로 재생) ----------
   let audioCtx = null;
-  let currentSource = null;
-
   function getAudioCtx() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
     return audioCtx;
   }
 
+  const player = {
+    sources: [],
+    nextTime: 0,
+    carry: null,
+    reset() {
+      this.sources.forEach(s => { try { s.stop(); } catch (e) {} });
+      this.sources = [];
+      this.nextTime = 0;
+      this.carry = null;
+    },
+    push(bytes) {
+      // 16bit PCM 경계가 청크 사이에서 잘릴 수 있으니 남은 1바이트를 이어 붙임
+      if (this.carry) {
+        const merged = new Uint8Array(this.carry.length + bytes.length);
+        merged.set(this.carry, 0); merged.set(bytes, this.carry.length);
+        bytes = merged; this.carry = null;
+      }
+      if (bytes.length % 2) { this.carry = bytes.slice(bytes.length - 1); bytes = bytes.slice(0, bytes.length - 1); }
+      if (!bytes.length) return;
+      const ctx = getAudioCtx();
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const n = bytes.length / 2;
+      const buf = ctx.createBuffer(1, n, 24000);
+      const ch = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) ch[i] = view.getInt16(i * 2, true) / 32768;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      const startAt = Math.max(ctx.currentTime + 0.02, this.nextTime);
+      src.start(startAt);
+      this.nextTime = startAt + buf.duration;
+      this.sources.push(src);
+      src.onended = () => { this.sources = this.sources.filter(x => x !== src); };
+    },
+    waitEnd() {
+      if (!audioCtx) return Promise.resolve();
+      const ms = Math.max(0, (this.nextTime - audioCtx.currentTime) * 1000);
+      return new Promise(r => setTimeout(r, ms + 30));
+    }
+  };
+
+  // ---------- 발음 캐시 (메모리 + IndexedDB, 새로고침해도 유지) ----------
+  const memAudioCache = new Map(); // key -> Uint8Array
+  let idbPromise = null;
+  function idbOpen() {
+    if (idbPromise) return idbPromise;
+    idbPromise = new Promise((resolve) => {
+      try {
+        const req = indexedDB.open('vocab_audio', 1);
+        req.onupgradeneeded = () => req.result.createObjectStore('pcm');
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
+    return idbPromise;
+  }
+  async function idbGet(key) {
+    const db = await idbOpen();
+    if (!db) return null;
+    return new Promise((resolve) => {
+      try {
+        const req = db.transaction('pcm', 'readonly').objectStore('pcm').get(key);
+        req.onsuccess = () => resolve(req.result ? new Uint8Array(req.result) : null);
+        req.onerror = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
+  }
+  async function idbSet(key, bytes) {
+    const db = await idbOpen();
+    if (!db) return;
+    try { db.transaction('pcm', 'readwrite').objectStore('pcm').put(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), key); } catch (e) {}
+  }
+  async function idbClear() {
+    const db = await idbOpen();
+    if (!db) return;
+    try { db.transaction('pcm', 'readwrite').objectStore('pcm').clear(); } catch (e) {}
+  }
+  function audioKey(s, text, slow) {
+    return [s.model, s.voice, s.accent, slow ? 'slow' : 'normal', text.trim().toLowerCase()].join('|');
+  }
+  async function getCachedAudio(key) {
+    if (memAudioCache.has(key)) return memAudioCache.get(key);
+    const v = await idbGet(key);
+    if (v) memAudioCache.set(key, v);
+    return v;
+  }
+  function putCachedAudio(key, bytes) {
+    memAudioCache.set(key, bytes);
+    idbSet(key, bytes);
+  }
+
+  // ---------- Gemini Live 세션 (연결을 열어 두고 재사용) ----------
   function base64ToBytes(b64) {
     const bin = atob(b64);
     const out = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return out;
   }
-
-  function fetchGeminiAudio(word, slow, s) {
-    return new Promise((resolve, reject) => {
-      const url = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=' + encodeURIComponent(s.apiKey);
-      let ws;
-      try { ws = new WebSocket(url); } catch (e) { reject(new Error('연결할 수 없어요')); return; }
-
-      const chunks = [];
-      let total = 0;
-      let finished = false;
-      const timer = setTimeout(() => finish(new Error('응답 시간이 초과됐어요')), 15000);
-
-      function finish(err) {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        try { ws.close(); } catch (e) {}
-        if (err) { reject(err); return; }
-        if (total === 0) { reject(new Error('오디오를 받지 못했어요')); return; }
-        const all = new Uint8Array(total);
-        let off = 0;
-        chunks.forEach(c => { all.set(c, off); off += c.length; });
-        resolve(new Int16Array(all.buffer, 0, Math.floor(total / 2)));
-      }
-
-      const instruction =
-        'You are an English pronunciation reader for a Korean student. ' +
-        'When the user sends an English word or phrase, say ONLY that exact word or phrase, once, ' +
-        'with clear, natural ' + s.accent + ' English pronunciation. ' +
-        'Do not add any greeting, explanation, spelling, translation or other words. Never respond in Korean.';
-
-      ws.onopen = () => {
-        ws.send(JSON.stringify({
-          setup: {
-            model: 'models/' + GEMINI_MODEL,
-            generationConfig: {
-              responseModalities: ['AUDIO'],
-              speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: s.voice } } }
-            },
-            systemInstruction: { parts: [{ text: instruction }] }
-          }
-        }));
-      };
-
-      ws.onmessage = async (ev) => {
-        let msg;
-        try {
-          const text = typeof ev.data === 'string' ? ev.data : await ev.data.text();
-          msg = JSON.parse(text);
-        } catch (e) { return; }
-
-        if (msg.setupComplete) {
-          const prompt = slow
-            ? 'Say this slowly and clearly, syllable by syllable but still as one word: "' + word + '"'
-            : 'Say: "' + word + '"';
-          ws.send(JSON.stringify({
-            clientContent: { turns: [{ role: 'user', parts: [{ text: prompt }] }], turnComplete: true }
-          }));
-          return;
-        }
-        const sc = msg.serverContent;
-        if (sc) {
-          const parts = (sc.modelTurn && sc.modelTurn.parts) || [];
-          parts.forEach(p => {
-            if (p.inlineData && p.inlineData.data && /audio/.test(p.inlineData.mimeType || 'audio')) {
-              const bytes = base64ToBytes(p.inlineData.data);
-              chunks.push(bytes);
-              total += bytes.length;
-            }
-          });
-          if (sc.turnComplete) finish();
-        }
-      };
-
-      ws.onerror = () => finish(new Error('연결 오류 (API 키나 네트워크를 확인해 주세요)'));
-      ws.onclose = (ev) => {
-        if (finished) return;
-        if (total > 0) { finish(); return; }
-        const reason = ev.reason ? ev.reason : ('코드 ' + ev.code);
-        finish(new Error(/api key|API_KEY|permission|invalid/i.test(reason) ? 'API 키가 올바르지 않아요' : '연결이 끊겼어요: ' + reason));
-      };
-    });
+  function buildInstruction(s) {
+    return 'You are an English pronunciation reader for a Korean student. ' +
+      'Each time the user sends an English word or phrase, say ONLY that exact word or phrase, once, ' +
+      'with clear, natural ' + s.accent + ' English pronunciation. ' +
+      'Do not add any greeting, explanation, spelling, translation or other words. Never respond in Korean. ' +
+      'Ignore previous turns; each request is independent.';
+  }
+  function buildPrompt(word, slow) {
+    return slow
+      ? 'Say this slowly and clearly, syllable by syllable but still as one word: "' + word + '"'
+      : 'Say: "' + word + '"';
   }
 
-  function playPcm(pcm) {
-    return new Promise((resolve) => {
-      const ctx = getAudioCtx();
-      if (currentSource) { try { currentSource.stop(); } catch (e) {} }
-      const buf = ctx.createBuffer(1, pcm.length, 24000);
-      const ch = buf.getChannelData(0);
-      for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      src.connect(ctx.destination);
-      src.onended = () => { if (currentSource === src) currentSource = null; resolve(); };
-      currentSource = src;
-      src.start();
+  class LiveSession {
+    constructor(s) {
+      this.s = Object.assign({}, s);
+      this.sig = [s.apiKey, s.model, s.voice, s.accent].join('|');
+      this.ws = null;
+      this.readyPromise = null;
+      this.queue = Promise.resolve();
+      this.active = null; // { onChunk, resolve, reject, chunks, total }
+      this.closed = false;
+      this.turns = 0;
+    }
+    connect() {
+      if (this.readyPromise) return this.readyPromise;
+      this.readyPromise = new Promise((resolve, reject) => {
+        const url = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=' + encodeURIComponent(this.s.apiKey);
+        let ws;
+        try { ws = new WebSocket(url); } catch (e) { this.closed = true; reject(new Error('연결할 수 없어요')); return; }
+        this.ws = ws;
+        let ready = false;
+        const timer = setTimeout(() => { if (!ready) { reject(new Error('연결 시간이 초과됐어요')); this.close(); } }, 10000);
+
+        ws.onopen = () => {
+          const generationConfig = {
+            responseModalities: ['AUDIO'],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: this.s.voice } } }
+          };
+          if (/^gemini-3/.test(this.s.model)) generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
+          ws.send(JSON.stringify({
+            setup: {
+              model: 'models/' + this.s.model,
+              generationConfig,
+              systemInstruction: { parts: [{ text: buildInstruction(this.s) }] }
+            }
+          }));
+        };
+        ws.onmessage = async (ev) => {
+          let msg;
+          try {
+            const text = typeof ev.data === 'string' ? ev.data : await ev.data.text();
+            msg = JSON.parse(text);
+          } catch (e) { return; }
+          if (msg.setupComplete) { ready = true; clearTimeout(timer); resolve(); return; }
+          if (msg.goAway) { this.closed = true; } // 곧 끊길 예정 → 다음 요청은 새 세션
+          const sc = msg.serverContent;
+          if (!sc || !this.active) return;
+          const parts = (sc.modelTurn && sc.modelTurn.parts) || [];
+          for (const p of parts) {
+            if (p.inlineData && p.inlineData.data) {
+              const bytes = base64ToBytes(p.inlineData.data);
+              this.active.chunks.push(bytes);
+              this.active.total += bytes.length;
+              if (this.active.onChunk) this.active.onChunk(bytes);
+            }
+          }
+          if (sc.turnComplete || sc.interrupted) {
+            const a = this.active; this.active = null;
+            a.resolve(a);
+          }
+        };
+        const fail = (reason) => {
+          clearTimeout(timer);
+          this.closed = true;
+          const err = new Error(/api key|API_KEY|permission|invalid|unauth/i.test(reason) ? 'API 키가 올바르지 않아요' : '연결이 끊겼어요' + (reason ? ': ' + reason : ''));
+          if (!ready) reject(err);
+          if (this.active) { const a = this.active; this.active = null; a.total > 0 ? a.resolve(a) : a.reject(err); }
+        };
+        ws.onerror = () => fail('');
+        ws.onclose = (ev) => fail(ev.reason || ('코드 ' + ev.code));
+      });
+      this.readyPromise.catch(() => {});
+      return this.readyPromise;
+    }
+    request(prompt, onChunk) {
+      const run = async () => {
+        await this.connect();
+        if (this.closed || !this.ws || this.ws.readyState !== 1) throw new Error('세션이 닫혔어요');
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            if (this.active && this.active.timer === timer) { this.active = null; reject(new Error('응답 시간이 초과됐어요')); this.close(); }
+          }, 15000);
+          this.active = {
+            onChunk, chunks: [], total: 0, timer,
+            resolve: (a) => { clearTimeout(timer); resolve(a); },
+            reject: (e) => { clearTimeout(timer); reject(e); }
+          };
+          this.turns++;
+          this.ws.send(JSON.stringify({
+            clientContent: { turns: [{ role: 'user', parts: [{ text: prompt }] }], turnComplete: true }
+          }));
+        }).then((a) => {
+          const all = new Uint8Array(a.total);
+          let off = 0;
+          a.chunks.forEach(c => { all.set(c, off); off += c.length; });
+          return all;
+        });
+      };
+      const p = this.queue.then(run, run);
+      this.queue = p.catch(() => {});
+      return p;
+    }
+    get usable() {
+      return !this.closed && this.turns < 40; // 대화 기록이 너무 쌓이면 새 세션
+    }
+    close() {
+      this.closed = true;
+      try { this.ws && this.ws.close(); } catch (e) {}
+    }
+  }
+
+  let liveSession = null;
+  let idleTimer = null;
+  function getLiveSession(s) {
+    const sig = [s.apiKey, s.model, s.voice, s.accent].join('|');
+    if (!liveSession || liveSession.sig !== sig || !liveSession.usable) {
+      if (liveSession) liveSession.close();
+      liveSession = new LiveSession(s);
+      liveSession.connect();
+    }
+    // 5분간 안 쓰면 연결 닫기
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(closeLiveSession, 5 * 60 * 1000);
+    return liveSession;
+  }
+  function closeLiveSession() {
+    clearTimeout(idleTimer);
+    if (liveSession) { liveSession.close(); liveSession = null; }
+  }
+  function warmGemini() {
+    if (settings.useGemini && settings.apiKey) { try { getLiveSession(settings); } catch (e) {} }
+  }
+
+  // 같은 단어를 동시에 두 번 요청하지 않도록
+  const inflight = new Map(); // key -> Promise<Uint8Array>
+  function fetchAudio(text, slow, onChunk) {
+    const key = audioKey(settings, text, slow);
+    if (inflight.has(key)) return inflight.get(key).then(bytes => { if (onChunk) onChunk(bytes); return bytes; });
+    const attempt = (retry) => getLiveSession(settings).request(buildPrompt(text, slow), onChunk).catch(err => {
+      if (retry && !/API 키/.test(err.message)) { closeLiveSession(); return attempt(false); }
+      throw err;
     });
+    const p = attempt(true).then(bytes => {
+      if (bytes.length) putCachedAudio(key, bytes);
+      return bytes;
+    }).finally(() => inflight.delete(key));
+    inflight.set(key, p);
+    return p;
+  }
+
+  // 카드/문제가 화면에 나오면 미리 받아 두기
+  let prefetchTimer = null;
+  function prefetchWord(text) {
+    try {
+      if (!settings.useGemini || !settings.apiKey || !settings.prefetch || !text) return;
+      clearTimeout(prefetchTimer);
+      prefetchTimer = setTimeout(async () => {
+        const key = audioKey(settings, text, false);
+        if (await getCachedAudio(key)) { warmGemini(); return; }
+        if (!inflight.has(key)) fetchAudio(text, false, null).catch(() => {});
+      }, 250);
+    } catch (e) {}
   }
 
   // ---------- 브라우저 기본 음성 ----------
@@ -2578,12 +2780,16 @@
     });
   }
 
+  function stopAllAudio() {
+    if (canSpeak) window.speechSynthesis.cancel();
+    player.reset();
+  }
+
   let speakingBtn = null;
   let speakSeq = 0;
   async function speakWord(text, rate, btn) {
     const seq = ++speakSeq;
-    if (canSpeak) window.speechSynthesis.cancel();
-    if (currentSource) { try { currentSource.stop(); } catch (e) {} currentSource = null; }
+    stopAllAudio();
     if (speakingBtn) speakingBtn.classList.remove('speaking');
     if (btn) { speakingBtn = btn; btn.classList.add('speaking'); }
 
@@ -2591,20 +2797,22 @@
     try {
       if (settings.useGemini && settings.apiKey) {
         getAudioCtx(); // 사용자 탭 시점에 오디오 잠금 해제 (iOS)
-        const key = settings.voice + '|' + settings.accent + '|' + (slow ? 'slow' : 'normal') + '|' + text.toLowerCase();
-        let pcm = geminiAudioCache.get(key);
-        try {
-          if (!pcm) {
-            pcm = await fetchGeminiAudio(text, slow, settings);
-            geminiAudioCache.set(key, pcm);
+        const cached = await getCachedAudio(audioKey(settings, text, slow));
+        if (seq !== speakSeq) return;
+        if (cached) {
+          player.push(cached);
+          warmGemini();
+        } else {
+          try {
+            await fetchAudio(text, slow, (bytes) => { if (seq === speakSeq) player.push(bytes); });
+          } catch (err) {
+            console.warn('[Gemini TTS]', err);
+            if (seq !== speakSeq) return;
+            await speakBrowser(text, rate); // 실패하면 기본 음성으로 대체
+            return;
           }
-          if (seq !== speakSeq) return;
-          await playPcm(pcm);
-        } catch (err) {
-          console.warn('[Gemini TTS]', err);
-          if (seq !== speakSeq) return;
-          await speakBrowser(text, rate); // 실패하면 기본 음성으로 대체
         }
+        if (seq === speakSeq) await player.waitEnd();
       } else {
         await speakBrowser(text, rate);
       }
@@ -2615,6 +2823,10 @@
       }
     }
   }
+
+  // 앱을 열 때 미리 연결해 두기
+  warmGemini();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') warmGemini(); });
 
   // 캡처 단계에서 처리해 카드/모아보기 항목의 탭(뜻 보기) 동작과 겹치지 않게 함
   document.addEventListener('click', (e) => {
