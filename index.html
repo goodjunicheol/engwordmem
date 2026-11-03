@@ -97,7 +97,7 @@
     margin-top: 6px;
     line-height: 1.4;
   }
-  input[type="text"], input[type="number"], textarea {
+  input[type="text"], input[type="number"], input[type="password"], textarea {
     width: 100%;
     padding: 13px 14px;
     border-radius: var(--radius-sm);
@@ -108,7 +108,7 @@
     font-family: inherit;
     transition: border-color 0.15s ease, background 0.15s ease;
   }
-  input[type="text"]:focus, input[type="number"]:focus, textarea:focus {
+  input[type="text"]:focus, input[type="number"]:focus, input[type="password"]:focus, textarea:focus {
     outline: none;
     border-color: var(--primary);
     background: #fff;
@@ -844,14 +844,114 @@
   nav.tabbar button:active { transform: scale(0.94); }
   nav.tabbar button .tab-icon { font-size: 19px; }
   nav.tabbar button.active { color: var(--primary-dark); background: var(--primary-light); }
+
+  /* 설정 */
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .settings-open-btn {
+    flex-shrink: 0;
+    width: 40px; height: 40px;
+    border: none; border-radius: 12px;
+    background: var(--primary-light);
+    font-size: 19px; cursor: pointer;
+  }
+  .settings-open-btn:active { transform: scale(0.92); }
+  .settings-overlay {
+    position: fixed; inset: 0;
+    background: rgba(20, 20, 40, 0.42);
+    display: none; align-items: flex-end; justify-content: center;
+    z-index: 100;
+  }
+  .settings-overlay.open { display: flex; animation: fadeIn 0.15s ease; }
+  .settings-sheet {
+    width: 100%; max-width: 480px;
+    max-height: 90vh; overflow-y: auto;
+    background: var(--card);
+    border-radius: 20px 20px 0 0;
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+  }
+  .settings-sheet h2 { font-size: 17px; font-weight: 800; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+  .settings-close { border: none; background: none; font-size: 20px; color: var(--sub); cursor: pointer; padding: 4px 8px; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+  .toggle-row .t-label { font-size: 14px; font-weight: 700; }
+  .switch { position: relative; width: 50px; height: 30px; flex-shrink: 0; margin: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider { position: absolute; inset: 0; background: #d6d8e6; border-radius: 30px; transition: background 0.2s; cursor: pointer; }
+  .switch .slider::before { content: ''; position: absolute; width: 24px; height: 24px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+  .switch input:checked + .slider { background: var(--primary); }
+  .switch input:checked + .slider::before { transform: translateX(20px); }
+  .gemini-fields { margin-top: 14px; }
+  .gemini-fields.disabled { opacity: 0.45; pointer-events: none; }
+  .key-wrap { position: relative; }
+  .key-wrap input { padding-right: 52px; }
+  .key-eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: none; background: none; font-size: 17px; cursor: pointer; padding: 6px; }
+  select.settings-select {
+    width: 100%; padding: 12px 14px; border-radius: var(--radius-sm);
+    border: 1.5px solid var(--border); background: #fafafe; font-size: 15px; font-family: inherit; color: var(--text);
+  }
+  .settings-actions { display: flex; gap: 8px; margin-top: 18px; }
+  .settings-actions .btn { flex: 1; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>📘 영단어 암기장</h1>
-    <p id="headerSub">등록한 단어를 저장하고 복습해 보세요</p>
+    <div>
+      <h1>📘 영단어 암기장</h1>
+      <p id="headerSub">등록한 단어를 저장하고 복습해 보세요</p>
+    </div>
+    <button class="settings-open-btn" id="settingsOpenBtn" title="설정">⚙️</button>
   </header>
+
+  <!-- 설정 -->
+  <div class="settings-overlay" id="settingsOverlay">
+    <div class="settings-sheet">
+      <h2>⚙️ 설정 <button class="settings-close" id="settingsCloseBtn">✕</button></h2>
+
+      <div class="form-group">
+        <div class="toggle-row">
+          <span class="t-label">🔊 Gemini 음성으로 발음 듣기</span>
+          <label class="switch"><input type="checkbox" id="setUseGemini"><span class="slider"></span></label>
+        </div>
+        <div class="field-hint">끄면 브라우저 기본 음성을 써요. Gemini Live 모델: gemini-2.5-flash-native-audio-preview-09-2025</div>
+      </div>
+
+      <div class="gemini-fields" id="geminiFields">
+        <div class="form-group">
+          <label for="setApiKey">Gemini API 키</label>
+          <div class="key-wrap">
+            <input type="password" id="setApiKey" placeholder="AIza..." autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+            <button class="key-eye" id="keyEyeBtn" type="button" title="보기">👁️</button>
+          </div>
+          <div class="field-hint">키는 이 브라우저(로컬스토리지)에만 저장돼요. Google AI Studio에서 발급받을 수 있어요.</div>
+        </div>
+        <div class="form-group">
+          <label for="setVoice">목소리</label>
+          <select class="settings-select" id="setVoice">
+            <option value="Kore">Kore (여성, 단단함)</option>
+            <option value="Aoede">Aoede (여성, 산뜻함)</option>
+            <option value="Leda">Leda (여성, 젊음)</option>
+            <option value="Puck">Puck (남성, 경쾌함)</option>
+            <option value="Charon">Charon (남성, 차분함)</option>
+            <option value="Fenrir">Fenrir (남성, 힘있음)</option>
+            <option value="Orus">Orus (남성, 단단함)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="setAccent">발음</label>
+          <select class="settings-select" id="setAccent">
+            <option value="American">미국식</option>
+            <option value="British">영국식</option>
+          </select>
+        </div>
+        <button class="btn btn-secondary" id="testVoiceBtn" type="button">🔊 테스트 (pronunciation)</button>
+      </div>
+
+      <div class="settings-actions">
+        <button class="btn btn-primary" id="settingsSaveBtn">저장</button>
+      </div>
+      <div class="form-msg" id="settingsMsg"></div>
+    </div>
+  </div>
 
   <main>
     <!-- 등록 탭 -->
@@ -2262,31 +2362,258 @@
     window.speechSynthesis.addEventListener('voiceschanged', pickEnglishVoice);
   }
 
-  let speakingBtn = null;
-  function speakWord(text, rate, btn) {
-    if (!canSpeak) {
-      alert('이 브라우저는 음성 읽기를 지원하지 않아요.\n(Chrome, Safari, Edge 등 최신 브라우저를 사용해 보세요.)');
+  // ---------- 설정 (로컬스토리지) ----------
+  const SETTINGS_KEY = 'vocab_settings_v1';
+  const GEMINI_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
+  const defaultSettings = { useGemini: false, apiKey: '', voice: 'Kore', accent: 'American' };
+  function loadSettings() {
+    try { return Object.assign({}, defaultSettings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
+    catch (e) { return Object.assign({}, defaultSettings); }
+  }
+  let settings = loadSettings();
+
+  const settingsOverlay = document.getElementById('settingsOverlay');
+  const setUseGemini = document.getElementById('setUseGemini');
+  const setApiKey = document.getElementById('setApiKey');
+  const setVoice = document.getElementById('setVoice');
+  const setAccent = document.getElementById('setAccent');
+  const geminiFields = document.getElementById('geminiFields');
+  const settingsMsg = document.getElementById('settingsMsg');
+
+  function showSettingsMsg(text, type) {
+    settingsMsg.textContent = text;
+    settingsMsg.className = 'form-msg' + (type ? ' ' + type : '');
+  }
+  function syncGeminiFields() {
+    geminiFields.classList.toggle('disabled', !setUseGemini.checked);
+  }
+  function openSettings() {
+    setUseGemini.checked = settings.useGemini;
+    setApiKey.value = settings.apiKey;
+    setApiKey.type = 'password';
+    setVoice.value = settings.voice;
+    setAccent.value = settings.accent;
+    syncGeminiFields();
+    showSettingsMsg('');
+    settingsOverlay.classList.add('open');
+  }
+  function closeSettings() { settingsOverlay.classList.remove('open'); }
+  function readSettingsForm() {
+    return { useGemini: setUseGemini.checked, apiKey: setApiKey.value.trim(), voice: setVoice.value, accent: setAccent.value };
+  }
+
+  document.getElementById('settingsOpenBtn').addEventListener('click', openSettings);
+  document.getElementById('settingsCloseBtn').addEventListener('click', closeSettings);
+  settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); });
+  setUseGemini.addEventListener('change', syncGeminiFields);
+  document.getElementById('keyEyeBtn').addEventListener('click', () => {
+    setApiKey.type = setApiKey.type === 'password' ? 'text' : 'password';
+  });
+  document.getElementById('settingsSaveBtn').addEventListener('click', () => {
+    const next = readSettingsForm();
+    if (next.useGemini && !next.apiKey) {
+      showSettingsMsg('Gemini를 쓰려면 API 키를 입력해 주세요.', 'error');
       return;
     }
-    const synth = window.speechSynthesis;
-    synth.cancel();
-    if (speakingBtn) speakingBtn.classList.remove('speaking');
-    if (!enVoice) pickEnglishVoice();
-
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = (enVoice && enVoice.lang) || 'en-US';
-    if (enVoice) u.voice = enVoice;
-    u.rate = rate || 0.95;
-    u.pitch = 1;
-
-    if (btn) {
-      speakingBtn = btn;
-      btn.classList.add('speaking');
-      const done = () => { btn.classList.remove('speaking'); if (speakingBtn === btn) speakingBtn = null; };
-      u.onend = done;
-      u.onerror = done;
+    const changedVoice = next.voice !== settings.voice || next.accent !== settings.accent || next.apiKey !== settings.apiKey;
+    settings = next;
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+    if (changedVoice) geminiAudioCache.clear();
+    showSettingsMsg('저장했어요.', 'success');
+    setTimeout(closeSettings, 500);
+  });
+  document.getElementById('testVoiceBtn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const s = readSettingsForm();
+    if (!s.apiKey) { showSettingsMsg('API 키를 입력해 주세요.', 'error'); return; }
+    showSettingsMsg('Gemini에 연결하는 중…');
+    btn.disabled = true;
+    try {
+      const pcm = await fetchGeminiAudio('pronunciation', false, s);
+      await playPcm(pcm);
+      showSettingsMsg('정상 동작해요. 저장을 눌러 주세요.', 'success');
+    } catch (err) {
+      showSettingsMsg('실패: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
     }
-    synth.speak(u);
+  });
+
+  // ---------- Gemini Live (네이티브 오디오) ----------
+  const geminiAudioCache = new Map(); // key -> Int16Array(PCM 24kHz)
+  let audioCtx = null;
+  let currentSource = null;
+
+  function getAudioCtx() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function base64ToBytes(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function fetchGeminiAudio(word, slow, s) {
+    return new Promise((resolve, reject) => {
+      const url = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=' + encodeURIComponent(s.apiKey);
+      let ws;
+      try { ws = new WebSocket(url); } catch (e) { reject(new Error('연결할 수 없어요')); return; }
+
+      const chunks = [];
+      let total = 0;
+      let finished = false;
+      const timer = setTimeout(() => finish(new Error('응답 시간이 초과됐어요')), 15000);
+
+      function finish(err) {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        try { ws.close(); } catch (e) {}
+        if (err) { reject(err); return; }
+        if (total === 0) { reject(new Error('오디오를 받지 못했어요')); return; }
+        const all = new Uint8Array(total);
+        let off = 0;
+        chunks.forEach(c => { all.set(c, off); off += c.length; });
+        resolve(new Int16Array(all.buffer, 0, Math.floor(total / 2)));
+      }
+
+      const instruction =
+        'You are an English pronunciation reader for a Korean student. ' +
+        'When the user sends an English word or phrase, say ONLY that exact word or phrase, once, ' +
+        'with clear, natural ' + s.accent + ' English pronunciation. ' +
+        'Do not add any greeting, explanation, spelling, translation or other words. Never respond in Korean.';
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({
+          setup: {
+            model: 'models/' + GEMINI_MODEL,
+            generationConfig: {
+              responseModalities: ['AUDIO'],
+              speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: s.voice } } }
+            },
+            systemInstruction: { parts: [{ text: instruction }] }
+          }
+        }));
+      };
+
+      ws.onmessage = async (ev) => {
+        let msg;
+        try {
+          const text = typeof ev.data === 'string' ? ev.data : await ev.data.text();
+          msg = JSON.parse(text);
+        } catch (e) { return; }
+
+        if (msg.setupComplete) {
+          const prompt = slow
+            ? 'Say this slowly and clearly, syllable by syllable but still as one word: "' + word + '"'
+            : 'Say: "' + word + '"';
+          ws.send(JSON.stringify({
+            clientContent: { turns: [{ role: 'user', parts: [{ text: prompt }] }], turnComplete: true }
+          }));
+          return;
+        }
+        const sc = msg.serverContent;
+        if (sc) {
+          const parts = (sc.modelTurn && sc.modelTurn.parts) || [];
+          parts.forEach(p => {
+            if (p.inlineData && p.inlineData.data && /audio/.test(p.inlineData.mimeType || 'audio')) {
+              const bytes = base64ToBytes(p.inlineData.data);
+              chunks.push(bytes);
+              total += bytes.length;
+            }
+          });
+          if (sc.turnComplete) finish();
+        }
+      };
+
+      ws.onerror = () => finish(new Error('연결 오류 (API 키나 네트워크를 확인해 주세요)'));
+      ws.onclose = (ev) => {
+        if (finished) return;
+        if (total > 0) { finish(); return; }
+        const reason = ev.reason ? ev.reason : ('코드 ' + ev.code);
+        finish(new Error(/api key|API_KEY|permission|invalid/i.test(reason) ? 'API 키가 올바르지 않아요' : '연결이 끊겼어요: ' + reason));
+      };
+    });
+  }
+
+  function playPcm(pcm) {
+    return new Promise((resolve) => {
+      const ctx = getAudioCtx();
+      if (currentSource) { try { currentSource.stop(); } catch (e) {} }
+      const buf = ctx.createBuffer(1, pcm.length, 24000);
+      const ch = buf.getChannelData(0);
+      for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.onended = () => { if (currentSource === src) currentSource = null; resolve(); };
+      currentSource = src;
+      src.start();
+    });
+  }
+
+  // ---------- 브라우저 기본 음성 ----------
+  function speakBrowser(text, rate) {
+    return new Promise((resolve) => {
+      if (!canSpeak) {
+        alert('이 브라우저는 음성 읽기를 지원하지 않아요.\n(Chrome, Safari, Edge 등 최신 브라우저를 사용해 보세요.)');
+        resolve();
+        return;
+      }
+      const synth = window.speechSynthesis;
+      synth.cancel();
+      if (!enVoice) pickEnglishVoice();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = (enVoice && enVoice.lang) || 'en-US';
+      if (enVoice) u.voice = enVoice;
+      u.rate = rate || 0.95;
+      u.pitch = 1;
+      u.onend = resolve;
+      u.onerror = resolve;
+      synth.speak(u);
+    });
+  }
+
+  let speakingBtn = null;
+  let speakSeq = 0;
+  async function speakWord(text, rate, btn) {
+    const seq = ++speakSeq;
+    if (canSpeak) window.speechSynthesis.cancel();
+    if (currentSource) { try { currentSource.stop(); } catch (e) {} currentSource = null; }
+    if (speakingBtn) speakingBtn.classList.remove('speaking');
+    if (btn) { speakingBtn = btn; btn.classList.add('speaking'); }
+
+    const slow = (rate || 0.95) < 0.8;
+    try {
+      if (settings.useGemini && settings.apiKey) {
+        getAudioCtx(); // 사용자 탭 시점에 오디오 잠금 해제 (iOS)
+        const key = settings.voice + '|' + settings.accent + '|' + (slow ? 'slow' : 'normal') + '|' + text.toLowerCase();
+        let pcm = geminiAudioCache.get(key);
+        try {
+          if (!pcm) {
+            pcm = await fetchGeminiAudio(text, slow, settings);
+            geminiAudioCache.set(key, pcm);
+          }
+          if (seq !== speakSeq) return;
+          await playPcm(pcm);
+        } catch (err) {
+          console.warn('[Gemini TTS]', err);
+          if (seq !== speakSeq) return;
+          await speakBrowser(text, rate); // 실패하면 기본 음성으로 대체
+        }
+      } else {
+        await speakBrowser(text, rate);
+      }
+    } finally {
+      if (btn && seq === speakSeq) {
+        btn.classList.remove('speaking');
+        if (speakingBtn === btn) speakingBtn = null;
+      }
+    }
   }
 
   // 캡처 단계에서 처리해 카드/모아보기 항목의 탭(뜻 보기) 동작과 겹치지 않게 함
