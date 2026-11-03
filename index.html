@@ -864,7 +864,7 @@
         <div class="form-group">
           <label for="inputMeaning">뜻</label>
           <textarea id="inputMeaning" placeholder="예: 은행, 강둑" lang="ko"></textarea>
-          <div class="field-hint">동음이의어가 있다면 쉼표(,)로 구분해서 여러 뜻을 입력하세요. 입력 후 Enter를 누르면 바로 등록돼요.</div>
+          <div class="field-hint">동음이의어가 있다면 쉼표(,)로 구분해서 여러 뜻을 입력하세요.<br>• (괄호)는 생략 가능: (서서히) 발전하다<br>• [대괄호]는 앞 단어 대체 가능: 발전[진전]하다 (여러 개는 [진전/향상])<br>• ~을/~를은 둘 중 아무거나 입력해도 정답: ~를 만들다<br>입력 후 Enter를 누르면 바로 등록돼요.</div>
         </div>
         <button class="btn btn-primary" id="addBtn">등록하기</button>
         <div class="form-msg" id="formMsg"></div>
@@ -1587,9 +1587,64 @@
   }
 
   // 쉼표로 구분된 여러 뜻(동음이의어 등)을 배열로 분리
+  // (괄호) 또는 [대괄호] 안의 쉼표는 구분자로 보지 않음
   function splitMeanings(meaningStr) {
-    const parts = String(meaningStr).split(',').map(s => s.trim()).filter(s => s.length > 0);
-    return parts.length > 0 ? parts : [String(meaningStr).trim()];
+    const s = String(meaningStr);
+    const parts = [];
+    let depth = 0, cur = '';
+    for (const ch of s) {
+      if (ch === '(' || ch === '[') depth++;
+      else if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1);
+      if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    parts.push(cur);
+    const cleaned = parts.map(p => p.trim()).filter(p => p.length > 0);
+    return cleaned.length > 0 ? cleaned : [s.trim()];
+  }
+
+  // (생략 가능) 표기 확장: "(서서히) 발전하다" -> ["발전하다", "서서히 발전하다"]
+  function expandOptional(str) {
+    const m = str.match(/\(([^()]*)\)/);
+    if (!m) return [str];
+    const before = str.slice(0, m.index);
+    const after = str.slice(m.index + m[0].length);
+    return [...expandOptional(before + after), ...expandOptional(before + m[1] + after)];
+  }
+
+  // [대체어] 표기 확장: 바로 앞 단어(띄어쓰기 이후)를 대체어로 바꾼 경우도 정답
+  // "발전[진전]하다" -> ["발전하다", "진전하다"], 여러 개는 [진전/향상]처럼 / 로 구분
+  function expandAlternatives(str) {
+    const m = str.match(/\[([^\[\]]*)\]/);
+    if (!m) return [str];
+    const before = str.slice(0, m.index);
+    const after = str.slice(m.index + m[0].length);
+    const tokenStart = Math.max(before.lastIndexOf(' '), before.lastIndexOf('\t')) + 1;
+    const head = before.slice(0, tokenStart);
+    const token = before.slice(tokenStart);
+    const alts = m[1].split('/').map(s => s.trim()).filter(Boolean);
+    const out = [];
+    [token, ...alts].forEach(t => out.push(...expandAlternatives(head + t + after)));
+    return out;
+  }
+
+  // 한 개의 뜻 표기에서 정답으로 인정되는 모든 형태를 만들어 줌
+  function expandMeaning(meaning) {
+    const all = expandOptional(String(meaning)).flatMap(expandAlternatives);
+    return Array.from(new Set(all.map(s => s.trim()).filter(s => s.length > 0)));
+  }
+
+  // 정답 비교용 정규화: 공백 제거, 소문자, ~을/~를 동일 취급, ~ 생략 허용
+  function normalizeAnswer(str) {
+    let t = String(str).replace(/\s+/g, '').toLowerCase();
+    t = t.replace(/~[을를]{1,2}/g, '~을').replace(/~/g, '');
+    t = t.replace(/^[을를]{1,2}(?=.)/, '을');
+    return t;
+  }
+
+  function isMeaningMatch(meaning, userAnswer) {
+    const target = normalizeAnswer(userAnswer);
+    return expandMeaning(meaning).some(v => normalizeAnswer(v) === target);
   }
 
   // 목록/모아보기 등에서 여러 뜻을 구분된 칩 형태로 표시하기 위한 HTML 생성
@@ -2077,7 +2132,7 @@
     let correctDisplayText;
     if (isMeaningDirection) {
       const meanings = splitMeanings(word.meaning);
-      isCorrect = meanings.some(m => normalizeText(m) === normalizeText(userAnswer));
+      isCorrect = meanings.some(m => isMeaningMatch(m, userAnswer));
       correctDisplayText = meanings.join(' · ');
     } else {
       isCorrect = normalizeText(userAnswer) === normalizeText(word.spell);
@@ -2090,7 +2145,7 @@
       quizFeedback.textContent = '정답: ' + correctDisplayText;
       quizFeedback.classList.add('wrong');
     } else if (isMeaningDirection && splitMeanings(word.meaning).length > 1) {
-      const others = splitMeanings(word.meaning).filter(m => normalizeText(m) !== normalizeText(userAnswer));
+      const others = splitMeanings(word.meaning).filter(m => !isMeaningMatch(m, userAnswer));
       quizFeedback.textContent = '정답이에요! (다른 뜻: ' + others.join(', ') + ')';
       quizFeedback.classList.add('correct');
     } else {
